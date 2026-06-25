@@ -620,6 +620,12 @@ class GcpBatchAsyncBackendJobExecutionActorSpec
       .isInstanceOf[FailedRetryableExecutionHandle] shouldBe true
     checkFailedResult(GcpBatchExitCode.VMRecreatedDuringExecution) // no VM start time - task has not started
       .isInstanceOf[FailedRetryableExecutionHandle] shouldBe true
+    // VMRecreatedDuringExecution is a GCP infrastructure event and should be retried even after the task
+    // has started running -- by definition it can only fire mid-execution.
+    checkFailedResult(
+      GcpBatchExitCode.VMRecreatedDuringExecution,
+      List(ExecutionEvent("Job state is set from SCHEDULED to RUNNING for job f00b4r", OffsetDateTime.now()))
+    ).isInstanceOf[FailedRetryableExecutionHandle] shouldBe true
     checkFailedResult(GcpBatchExitCode.VMReportingTimeout)
       .isInstanceOf[FailedRetryableExecutionHandle] shouldBe true
     checkFailedResult(
@@ -627,20 +633,17 @@ class GcpBatchAsyncBackendJobExecutionActorSpec
       List(ExecutionEvent("Job state is set from QUEUED to SCHEDULED for job f00bar123", OffsetDateTime.now()))
     )
       .isInstanceOf[FailedRetryableExecutionHandle] shouldBe true
+    // VMReportingTimeout is a GCP infrastructure event and should be retried even after the task has started
+    // running -- it fires randomly during execution.
+    checkFailedResult(
+      GcpBatchExitCode.VMReportingTimeout,
+      List(ExecutionEvent("Job state is set from SCHEDULED to RUNNING for job f00bar123", OffsetDateTime.now()))
+    ).isInstanceOf[FailedRetryableExecutionHandle] shouldBe true
 
     // Should not retry
     checkFailedResult(GcpBatchExitCode.GenericFailure)
       .isInstanceOf[FailedNonRetryableExecutionHandle] shouldBe true
     checkFailedResult(GcpBatchExitCode.TaskRunsOverMaximumRuntime)
-      .isInstanceOf[FailedNonRetryableExecutionHandle] shouldBe true
-    checkFailedResult(
-      GcpBatchExitCode.VMRecreatedDuringExecution,
-      List(ExecutionEvent("Job state is set from SCHEDULED to RUNNING for job f00b4r", OffsetDateTime.now()))
-    ).isInstanceOf[FailedNonRetryableExecutionHandle] shouldBe true
-    checkFailedResult(
-      GcpBatchExitCode.VMReportingTimeout,
-      List(ExecutionEvent("Job state is set from SCHEDULED to RUNNING for job f00bar123", OffsetDateTime.now()))
-    )
       .isInstanceOf[FailedNonRetryableExecutionHandle] shouldBe true
     actorRef.stop()
   }

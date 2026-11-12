@@ -58,7 +58,8 @@ case class GcpBatchConfigurationAttributes(
   referenceFileToDiskImageMappingOpt: Option[Map[String, GcpBatchReferenceFilesDisk]],
   checkpointingInterval: FiniteDuration,
   logsPolicy: GcpBatchLogsPolicy,
-  maxTransientErrorRetries: Int
+  maxTransientErrorRetries: Int,
+  bootDiskType: Option[String]
 )
 
 object GcpBatchConfigurationAttributes extends GcpBatchReferenceFilesMappingOperations with StrictLogging {
@@ -104,6 +105,7 @@ object GcpBatchConfigurationAttributes extends GcpBatchReferenceFilesMappingOper
     "batch.localization-attempts",
     "batch.parallel-composite-upload-threshold",
     "batch.logs-policy",
+    "batch.boot-disk-type",
     "filesystems",
     "filesystems.drs.auth",
     "filesystems.gcs.auth",
@@ -311,6 +313,8 @@ object GcpBatchConfigurationAttributes extends GcpBatchReferenceFilesMappingOper
     val maxTransientErrorRetries: Int =
       backendConfig.as[Option[Int]]("max-transient-error-retries").getOrElse(10)
 
+    val bootDiskType: Option[String] = backendConfig.as[Option[String]]("batch.boot-disk-type")
+
     def authGoogleConfigForBatchConfigurationAttributes(
       project: String,
       bucket: String,
@@ -354,7 +358,8 @@ object GcpBatchConfigurationAttributes extends GcpBatchReferenceFilesMappingOper
           referenceFileToDiskImageMappingOpt = generatedReferenceFilesMappingOpt,
           checkpointingInterval = checkpointingInterval,
           logsPolicy = logsPolicy,
-          maxTransientErrorRetries = maxTransientErrorRetries
+          maxTransientErrorRetries = maxTransientErrorRetries,
+          bootDiskType = bootDiskType
         )
       }
 

@@ -436,7 +436,8 @@ class BatchBackendCacheHitCopyingActorSpec
       referenceFileToDiskImageMappingOpt = None,
       checkpointingInterval = 10.minutes,
       logsPolicy = GcpBatchLogsPolicy.CloudLogging,
-      maxTransientErrorRetries = 10
+      maxTransientErrorRetries = 10,
+      bootDiskType = None
     )
 
     val batchConfiguration = mockWithDefaults[GcpBatchConfiguration]

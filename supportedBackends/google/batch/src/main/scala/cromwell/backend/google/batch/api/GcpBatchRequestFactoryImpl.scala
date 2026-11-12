@@ -87,7 +87,8 @@ class GcpBatchRequestFactoryImpl()(implicit gcsTransferConfiguration: GcsTransfe
                                    spotModel: ProvisioningModel,
                                    accelerators: Option[Accelerator.Builder],
                                    attachedDisks: List[AttachedDisk],
-                                   machineType: String
+                                   machineType: String,
+                                   bootDiskType: Option[String]
   ): InstancePolicy.Builder = {
 
     // set GPU count to 0 if not included in workflow
@@ -101,12 +102,18 @@ class GcpBatchRequestFactoryImpl()(implicit gcsTransferConfiguration: GcsTransfe
     // https://cloud.google.com/batch/docs/reference/rest/v1/projects.locations.jobs#Accelerator.FIELDS.driver_version
     val gpuAccelerators = accelerators.getOrElse(Accelerator.newBuilder.setCount(0).setType(""))
 
-    val instancePolicy = InstancePolicy.newBuilder
+    val instancePolicyBuilder = InstancePolicy.newBuilder
       .setProvisioningModel(spotModel)
       .setMachineType(machineType)
       .addAllDisks(attachedDisks.asJava)
       .setMinCpuPlatform(cpuPlatform)
-      .buildPartial()
+
+    // Only the boot disk type is set; size is still derived by Batch from the image and `ComputeResource.bootDiskMib`.
+    // If unset, Batch uses its default boot disk type.
+    // https://cloud.google.com/batch/docs/reference/rest/v1/projects.locations.jobs#InstancePolicy.FIELDS.boot_disk
+    bootDiskType.foreach(t => instancePolicyBuilder.setBootDisk(Disk.newBuilder.setType(t).build))
+
+    val instancePolicy = instancePolicyBuilder.buildPartial()
 
     // add GPUs if GPU count is greater than 1
     if (gpuAccelerators.getCount >= 1) {
@@ -284,7 +291,14 @@ class GcpBatchRequestFactoryImpl()(implicit gcsTransferConfiguration: GcsTransfe
     }
 
     val instancePolicy =
-      createInstancePolicy(cpuPlatform = cpuPlatform, spotModel, accelerators, allDisks, machineType = machineType)
+      createInstancePolicy(
+        cpuPlatform = cpuPlatform,
+        spotModel,
+        accelerators,
+        allDisks,
+        machineType = machineType,
+        bootDiskType = data.gcpBatchParameters.batchAttributes.bootDiskType
+      )
     val locationPolicy = LocationPolicy.newBuilder.addAllAllowedLocations(zones.asJava).build
     val allocationPolicy =
       createAllocationPolicy(data, locationPolicy, instancePolicy.build, networkPolicy, gcpSa, accelerators)

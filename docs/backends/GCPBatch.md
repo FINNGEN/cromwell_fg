@@ -215,6 +215,18 @@ backend.providers.GCPBATCH.config {
 }
 ```
 
+## Boot disk type
+
+By default Batch picks the boot disk type for each VM. Setting `batch.boot-disk-type` overrides it for all jobs, for example
+to use the cheaper `pd-standard`. Not every machine family supports every disk type (e.g. C3, C4, N4 and H3 do not support
+`pd-standard`), and jobs requesting an unsupported combination will fail to be created.
+
+```hocon
+backend.providers.GCPBATCH.config {
+    batch.boot-disk-type: "pd-standard"
+}
+```
+
 ## Google Labels
 
 Every call run on the GCP Batch backend is given certain labels by default, so that Google resources can be queried by these labels later. 

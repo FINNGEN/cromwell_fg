@@ -36,6 +36,13 @@ class GcpBatchConfigurationAttributesSpec
     gcpBatchAttributes.computeServiceAccount should be("default")
     gcpBatchAttributes.referenceFileToDiskImageMappingOpt.isEmpty should be(true)
     gcpBatchAttributes.logsPolicy should be(GcpBatchLogsPolicy.CloudLogging)
+    gcpBatchAttributes.bootDiskType should be(None)
+  }
+
+  it should "parse boot-disk-type" in {
+    val backendConfig = ConfigFactory.parseString(configString(batch = """boot-disk-type = "pd-standard" """))
+    val gcpBatchAttributes = GcpBatchConfigurationAttributes(googleConfig, backendConfig, "GCPBATCH")
+    gcpBatchAttributes.bootDiskType should be(Some("pd-standard"))
   }
 
   it should "parse correct preemptible config" in {

@@ -1250,15 +1250,14 @@ class GcpBatchAsyncBackendJobExecutionActor(override val standardParams: Standar
   // Check whether this failure should be automatically resubmitted without counting against maxRetries.
   // Guidance: Resubmit if the task has a known-transient failure type and has not yet cost the user money,
   // OR if the failure is a GCP-side infrastructure event that is not attributable to user code regardless of
-  // how long the task had been running (e.g. VMRecreatedDuringExecution and VMReportingTimeout, which by
-  // definition can fire after the task has started).
+  // how long the task had been running (e.g. VMRecreatedDuringExecution, VMRebootedDuringExecution and
+  // VMReportingTimeout, which by definition can fire after the task has started).
   private def isTransientFailure(failed: RunStatus.Failed): Boolean = {
-    lazy val errorTypeIsTransientBeforeRunning = List(
-      GcpBatchExitCode.VMPreemption,
-      GcpBatchExitCode.VMRebootedDuringExecution
-    ).contains(failed.errorCode)
+    lazy val errorTypeIsTransientBeforeRunning =
+      failed.errorCode == GcpBatchExitCode.VMPreemption
     lazy val errorTypeIsAlwaysTransient = List(
       GcpBatchExitCode.VMRecreatedDuringExecution,
+      GcpBatchExitCode.VMRebootedDuringExecution,
       GcpBatchExitCode.VMReportingTimeout
     ).contains(failed.errorCode)
     lazy val taskStartedRunning = failed.eventList.exists(e => executionEventRunningMatcher.matches(e.name))
@@ -1275,7 +1274,7 @@ class GcpBatchAsyncBackendJobExecutionActor(override val standardParams: Standar
         // This message doesn't contain information about which error because that's added inside StandardException
         val remainingTransientRetries = maxTransientErrorRetries - tr
         val msg =
-          s"Task failed immediately due to a transient GCP Batch error and will be automatically resubmitted up to ${remainingTransientRetries} more times."
+          s"Task failed due to a transient GCP Batch error and will be automatically resubmitted up to ${remainingTransientRetries} more times."
         FailedRetryableExecutionHandle(
           StandardException(failed.errorCode, Option(msg), jobTag, returnCode, standardPaths.error),
           returnCode,

@@ -637,6 +637,14 @@ class GcpBatchAsyncBackendJobExecutionActorSpec
       GcpBatchExitCode.VMReportingTimeout,
       List(ExecutionEvent("Job state is set from SCHEDULED to RUNNING for job f00bar123", OffsetDateTime.now()))
     ).isInstanceOf[FailedRetryableExecutionHandle] shouldBe true
+    checkFailedResult(GcpBatchExitCode.VMRebootedDuringExecution)
+      .isInstanceOf[FailedRetryableExecutionHandle] shouldBe true
+    // VMRebootedDuringExecution is a GCP infrastructure event and should be retried even after the task has
+    // started running -- by definition it fires mid-execution.
+    checkFailedResult(
+      GcpBatchExitCode.VMRebootedDuringExecution,
+      List(ExecutionEvent("Job state is set from SCHEDULED to RUNNING for job f00bar123", OffsetDateTime.now()))
+    ).isInstanceOf[FailedRetryableExecutionHandle] shouldBe true
 
     // Should not retry
     checkFailedResult(GcpBatchExitCode.GenericFailure)

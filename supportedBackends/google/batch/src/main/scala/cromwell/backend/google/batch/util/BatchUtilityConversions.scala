@@ -39,7 +39,11 @@ trait BatchUtilityConversions {
   def toProvisioningModel(preemptible: Boolean): ProvisioningModel =
     if (preemptible) ProvisioningModel.SPOT else ProvisioningModel.STANDARD
 
-  def toDisks(disks: Seq[GcpBatchAttachedDisk]): List[AttachedDisk] = disks.map(toDisk).toList
+  /**
+    * @param hyperdiskOnly If true (e.g. for N4/N4D machines), SSD and HDD disks are created as Hyperdisk Balanced.
+    */
+  def toDisks(disks: Seq[GcpBatchAttachedDisk], hyperdiskOnly: Boolean = false): List[AttachedDisk] =
+    disks.map(toDisk(_, hyperdiskOnly)).toList
 
   def toVolumes(disks: Seq[GcpBatchAttachedDisk]): List[Volume] = disks.map(toVolume).toList
 
@@ -58,10 +62,10 @@ trait BatchUtilityConversions {
     }
   }
 
-  private def toDisk(disk: GcpBatchAttachedDisk): AttachedDisk = {
+  private def toDisk(disk: GcpBatchAttachedDisk, hyperdiskOnly: Boolean): AttachedDisk = {
     val googleDisk = Disk.newBuilder
       .setSizeGb(disk.sizeGb.toLong)
-      .setType(toBatchDiskType(disk.diskType))
+      .setType(toBatchDiskType(disk.diskType, hyperdiskOnly))
 
     disk match {
       case refDisk: GcpBatchReferenceFilesDisk =>
@@ -78,11 +82,21 @@ trait BatchUtilityConversions {
 
   }
 
-  private def toBatchDiskType(diskType: DiskType) = diskType match {
+  private def toBatchDiskType(diskType: DiskType, hyperdiskOnly: Boolean) = diskType match {
+    case DiskType.HDD | DiskType.SSD if hyperdiskOnly => HyperdiskBalancedType
     case DiskType.HDD => "pd-standard"
     case DiskType.SSD => "pd-ssd"
     case DiskType.LOCAL => "local-ssd"
   }
+
+  val HyperdiskBalancedType = "hyperdisk-balanced"
+
+  // Boot disk for machine families that only support Hyperdisk. Image and size are left unset so that Batch keeps
+  // choosing its default image and sizes the disk from the task's ComputeResource.bootDiskMib, as for other families.
+  lazy val hyperdiskBootDisk: Disk =
+    Disk.newBuilder
+      .setType(HyperdiskBalancedType)
+      .build
 
   def convertGbToMib(runtimeAttributes: GcpBatchRuntimeAttributes): Long =
     (runtimeAttributes.bootDiskSize * 953.7).toLong

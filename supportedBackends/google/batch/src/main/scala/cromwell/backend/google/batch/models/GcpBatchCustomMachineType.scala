@@ -23,9 +23,28 @@ import scala.math.{log, pow}
 trait CustomMachineType {
 
   /**
+    * The machine family name as accepted by the `machineFamily` runtime attribute, e.g. "n2d".
+    */
+  def family: String
+
+  /**
     * The vm prefix to create this custom machine type.
     */
   def vmTypePrefix: String
+
+  /**
+    * Whether this family supports extended memory, i.e. memory beyond `maxMemoryPerCpu` billed at the extended
+    * memory rate, requested by appending `-ext` to the machine type.
+    */
+  def supportsExtendedMemory: Boolean
+
+  /**
+    * Whether this family only supports Hyperdisk block storage (no Persistent Disk, no Local SSD).
+    */
+  def requiresHyperdisk: Boolean = false
+
+  // Shown in metadata for the `machineFamily` runtime attribute
+  override def toString: String = family
 
   /**
     * The minimum memory per cpu.
@@ -53,9 +72,16 @@ trait CustomMachineType {
   def validateMemory(memory: MemorySize): MemorySize
 
   /**
-    * Generates a custom machine type based on the requested memory and cpu
+    * Generates a custom machine type based on the requested memory and cpu.
+    *
+    * @param useExtendedMemory If true and the family supports extended memory, a memory-per-cpu ratio above
+    *                          `maxMemoryPerCpu` is satisfied with extended memory instead of adding cpus.
     */
-  def machineType(requestedMemory: MemorySize, requestedCpu: Int Refined Positive, jobLogger: Logger): String = {
+  def machineType(requestedMemory: MemorySize,
+                  requestedCpu: Int Refined Positive,
+                  jobLogger: Logger,
+                  useExtendedMemory: Boolean = false
+  ): String = {
     val memory = requestedMemory |> validateMemory
     val cpu = requestedCpu |> validateCpu
 
@@ -69,8 +95,13 @@ trait CustomMachineType {
       case Right(adjusted) => adjusted |> validateCpu
     }
 
+    val extendedMemory = useExtendedMemory && supportsExtendedMemory && memoryPerCpuRatio > maxMemoryPerCpu.bytes
+
     val (validCpu, validMemory) =
-      if (memoryPerCpuRatio < minMemoryPerCpu.bytes) {
+      if (extendedMemory) {
+        // Keep the requested cpu and bill the memory above the max ratio as extended memory
+        (cpu, memory)
+      } else if (memoryPerCpuRatio < minMemoryPerCpu.bytes) {
         // If we're under the ratio, top up the memory. Because validMemory will only increase memory (if needed),
         // there's no risk that the call to validMemory will make the ratio invalid
         (cpu, adjustedMemory)
@@ -83,7 +114,8 @@ trait CustomMachineType {
         (cpu, memory)
       }
     logAdjustment(requestedCpu.value, validCpu, requestedMemory, validMemory, jobLogger)
-    s"${vmTypePrefix}custom-$validCpu-${validMemory.to(MemoryUnit.MB).amount.intValue()}"
+    val extSuffix = if (extendedMemory) "-ext" else ""
+    s"${vmTypePrefix}custom-$validCpu-${validMemory.to(MemoryUnit.MB).amount.intValue()}$extSuffix"
   }
 
   private def logAdjustment(originalCpu: Int,
@@ -112,6 +144,33 @@ trait CustomMachineType {
 }
 
 object CustomMachineType {
+
+  /**
+    * Machine families selectable with the `machineFamily` runtime attribute.
+    */
+  lazy val supportedFamilies: List[CustomMachineType] = List(
+    N1CustomMachineType,
+    N2CustomMachineType,
+    N2DCustomMachineType,
+    N4CustomMachineType,
+    N4DCustomMachineType,
+    E2CustomMachineType
+  )
+
+  def fromFamily(family: String): Option[CustomMachineType] =
+    supportedFamilies.find(_.family.equalsIgnoreCase(family.trim))
+
+  /**
+    * Valid cpu counts for N2D and N4D: 2, 4, 8, 16, then multiples of 16 up to 96.
+    */
+  private[models] def validateAmdCpu(cpu: Int): Int =
+    cpu match {
+      case cpu if cpu <= 16 => 2 max pow(2, (log(cpu.toDouble) / log(2)).ceil).toInt
+      case cpu if cpu > 16 && cpu <= 96 && cpu % 16 == 0 => cpu
+      case cpu if cpu > 16 && cpu <= 96 => cpu + 16 - (cpu % 16)
+      case _ => 96
+    }
+
   implicit class EnhancedInformation(val information: MemorySize) extends AnyVal {
     def asMultipleOf(factor: MemorySize): MemorySize =
       MemorySize(factor.amount * (information.bytes / factor.bytes).ceil, factor.unit)
@@ -121,8 +180,10 @@ object CustomMachineType {
 }
 
 case object N1CustomMachineType extends CustomMachineType {
+  override val family: String = "n1"
   // For now using the legacy empty prefix that implies "n1-"
   override val vmTypePrefix: String = ""
+  override val supportsExtendedMemory: Boolean = true
   override val minMemoryPerCpu: MemorySize = MemorySize(0.9, MemoryUnit.GB)
   override val maxMemoryPerCpu: MemorySize = MemorySize(6.5, MemoryUnit.GB)
   override val memoryFactor: MemorySize = MemorySize(256, MemoryUnit.MB)
@@ -139,7 +200,9 @@ case object N1CustomMachineType extends CustomMachineType {
 }
 
 case object N2CustomMachineType extends CustomMachineType {
+  override val family: String = "n2"
   override val vmTypePrefix: String = "n2-"
+  override val supportsExtendedMemory: Boolean = true
   override val minMemoryPerCpu: MemorySize = MemorySize(1.0, MemoryUnit.GB)
   override val maxMemoryPerCpu: MemorySize = MemorySize(8.0, MemoryUnit.GB)
   override val memoryFactor: MemorySize = MemorySize(256, MemoryUnit.MB)
@@ -157,18 +220,74 @@ case object N2CustomMachineType extends CustomMachineType {
 }
 
 case object N2DCustomMachineType extends CustomMachineType {
+  override val family: String = "n2d"
   override val vmTypePrefix: String = "n2d-"
+  override val supportsExtendedMemory: Boolean = true
   override val minMemoryPerCpu: MemorySize = MemorySize(0.5, MemoryUnit.GB)
   override val maxMemoryPerCpu: MemorySize = MemorySize(8.0, MemoryUnit.GB)
   override val memoryFactor: MemorySize = MemorySize(256, MemoryUnit.MB)
 
+  override def validateCpu(cpu: Refined[Int, Positive]): Int = CustomMachineType.validateAmdCpu(cpu.value)
+
+  override def validateMemory(memory: MemorySize): MemorySize =
+    memory.asMultipleOf(memoryFactor)
+}
+
+/**
+  * N4 machines only support Hyperdisk storage.
+  */
+case object N4CustomMachineType extends CustomMachineType {
+  override val family: String = "n4"
+  override val vmTypePrefix: String = "n4-"
+  override val supportsExtendedMemory: Boolean = true
+  override val requiresHyperdisk: Boolean = true
+  override val minMemoryPerCpu: MemorySize = MemorySize(2.0, MemoryUnit.GB)
+  override val maxMemoryPerCpu: MemorySize = MemorySize(8.0, MemoryUnit.GB)
+  override val memoryFactor: MemorySize = MemorySize(256, MemoryUnit.MB)
+
   override def validateCpu(cpu: Refined[Int, Positive]): Int =
-    cpu.value match {
-      case cpu if cpu <= 16 => 2 max pow(2, (log(cpu.toDouble) / log(2)).ceil).toInt
-      case cpu if cpu > 16 && cpu <= 96 && cpu % 16 == 0 => cpu
-      case cpu if cpu > 16 && cpu <= 96 => cpu + 16 - (cpu % 16)
-      case cpu if cpu > 96 => 96
-    }
+    // Any multiple of 2, between 2 and 80
+    (2 max (cpu.value + (cpu.value % 2))) min 80
+
+  override def validateMemory(memory: MemorySize): MemorySize =
+    memory.asMultipleOf(memoryFactor)
+}
+
+/**
+  * N4D machines only support Hyperdisk storage.
+  */
+case object N4DCustomMachineType extends CustomMachineType {
+  override val family: String = "n4d"
+  override val vmTypePrefix: String = "n4d-"
+  override val supportsExtendedMemory: Boolean = true
+  override val requiresHyperdisk: Boolean = true
+  override val minMemoryPerCpu: MemorySize = MemorySize(0.5, MemoryUnit.GB)
+  override val maxMemoryPerCpu: MemorySize = MemorySize(8.0, MemoryUnit.GB)
+  override val memoryFactor: MemorySize = MemorySize(256, MemoryUnit.MB)
+
+  override def validateCpu(cpu: Refined[Int, Positive]): Int = CustomMachineType.validateAmdCpu(cpu.value)
+
+  override def validateMemory(memory: MemorySize): MemorySize =
+    memory.asMultipleOf(memoryFactor)
+}
+
+/**
+  * E2 machines do not support extended memory, so memory above 8 GB per cpu always adds cpus.
+  */
+case object E2CustomMachineType extends CustomMachineType {
+  override val family: String = "e2"
+  override val vmTypePrefix: String = "e2-"
+  override val supportsExtendedMemory: Boolean = false
+  override val minMemoryPerCpu: MemorySize = MemorySize(0.5, MemoryUnit.GB)
+  override val maxMemoryPerCpu: MemorySize = MemorySize(8.0, MemoryUnit.GB)
+  override val memoryFactor: MemorySize = MemorySize(256, MemoryUnit.MB)
+
+  val maxCpu: Int = 32
+  val maxMemory: MemorySize = MemorySize(128, MemoryUnit.GB)
+
+  override def validateCpu(cpu: Refined[Int, Positive]): Int =
+    // Any multiple of 2, between 2 and 32
+    (2 max (cpu.value + (cpu.value % 2))) min maxCpu
 
   override def validateMemory(memory: MemorySize): MemorySize =
     memory.asMultipleOf(memoryFactor)

@@ -1,6 +1,9 @@
 # Cromwell Change Log
 
 ## 93 Release Notes
+### GCP Batch
+* Added the `machineFamily` runtime attribute, which selects the machine family (`n1`, `n2`, `n2d`, `n4`, `n4d` or `e2`) of the custom machine type built from `cpu` and `memory`. It can be set for a whole workflow via the `default_runtime_attributes` workflow option. When set, memory above the family's per-vCPU maximum is requested as extended memory instead of adding vCPUs. On `n4`/`n4d` the boot disk and `SSD`/`HDD` disks are created as `hyperdisk-balanced`. See [machineFamily](docs/RuntimeAttributes.md#machinefamily).
+
 ### AWS Batch
 * Added `tagAliases` backend config option, which duplicates engine-generated tags (e.g. `cromwell-workflow-id`) under alternative key names for external systems like cost-tracking tools. See the [Tag Aliases](supportedBackends/aws/src/main/scala/cromwell/backend/impl/aws/README.md#tag-aliases) section for configuration details.
 * The `disks` WDL runtime attribute size is now honored on EC2 Batch compute environments. Previously, the size component (e.g. `500` in `local-disk 500 HDD`) was silently discarded and tasks shared whatever EBS was attached to the host instance. When a size greater than zero is specified, each task now receives a dedicated gp3 EBS volume of exactly the requested size, provisioned before the task runs and deleted on exit — matching the per-task disk lifecycle of the GCP Batch backend. This requires an AMI built with the `cromwell-disk-utils` bundle at `/usr/local/cromwell-disk-utils` and IAM permissions for `ec2:CreateVolume`, `ec2:AttachVolume`, `ec2:DetachVolume`, `ec2:DeleteVolume`, `ec2:DescribeVolumes`, and `ec2:CreateTags` on the batch instance role. Tasks with no `disks` attribute or a zero-size disk are unaffected.

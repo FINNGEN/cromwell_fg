@@ -286,6 +286,92 @@ final class GcpBatchRuntimeAttributesSpec
       assertBatchRuntimeAttributesSuccessfulCreation(runtimeAttributes, expectedRuntimeAttributes, workflowOptions)
     }
 
+    "parse machineFamily from workflow options default runtime attributes" in {
+      val runtimeAttributes = Map("docker" -> WomString("ubuntu:latest"))
+      val workflowOptions = workflowOptionsWithDefaultRA(Map("machineFamily" -> JsString("n2d")))
+      val expectedRuntimeAttributes = expectedDefaults.copy(machineFamily = Option(N2DCustomMachineType))
+      assertBatchRuntimeAttributesSuccessfulCreation(runtimeAttributes, expectedRuntimeAttributes, workflowOptions)
+    }
+
+    "let a task's machineFamily override the workflow options default" in {
+      val runtimeAttributes = Map("docker" -> WomString("ubuntu:latest"), "machineFamily" -> WomString("N4"))
+      val workflowOptions = workflowOptionsWithDefaultRA(Map("machineFamily" -> JsString("n2d")))
+      val expectedRuntimeAttributes = expectedDefaults.copy(machineFamily = Option(N4CustomMachineType))
+      assertBatchRuntimeAttributesSuccessfulCreation(runtimeAttributes, expectedRuntimeAttributes, workflowOptions)
+    }
+
+    "fail to validate an unsupported machineFamily" in {
+      val runtimeAttributes = Map("docker" -> WomString("ubuntu:latest"), "machineFamily" -> WomString("c3"))
+      assertBatchRuntimeAttributesFailedCreation(
+        runtimeAttributes,
+        "Invalid 'machineFamily': 'c3' is not a supported machine family. Supported families: n1, n2, n2d, n4, n4d, e2."
+      )
+    }
+
+    "accept GPUs with the n1 machine family" in {
+      val runtimeAttributes = Map(
+        "docker" -> WomString("ubuntu:latest"),
+        "gpuCount" -> WomInteger(1),
+        "machineFamily" -> WomString("n1")
+      )
+      val expectedRuntimeAttributes = expectedDefaults.copy(
+        gpuResource = Option(GpuResource(GpuType.DefaultGpuType, refineMV[Positive](1))),
+        machineFamily = Option(N1CustomMachineType)
+      )
+      assertBatchRuntimeAttributesSuccessfulCreation(runtimeAttributes, expectedRuntimeAttributes)
+    }
+
+    "fail to validate GPUs with a machine family other than n1" in {
+      val runtimeAttributes = Map(
+        "docker" -> WomString("ubuntu:latest"),
+        "gpuCount" -> WomInteger(1),
+        "machineFamily" -> WomString("n2d")
+      )
+      assertBatchRuntimeAttributesFailedCreation(
+        runtimeAttributes,
+        "GPU accelerators ('gpuType'/'gpuCount') can only be attached to the n1 machine family, but 'machineFamily' is 'n2d'."
+      )
+    }
+
+    "fail to validate local SSD disks with the n4 machine family" in {
+      val runtimeAttributes = Map(
+        "docker" -> WomString("ubuntu:latest"),
+        "disks" -> WomString("local-disk 375 LOCAL"),
+        "machineFamily" -> WomString("n4")
+      )
+      assertBatchRuntimeAttributesFailedCreation(
+        runtimeAttributes,
+        "The n4 machine family only supports Hyperdisk storage, so LOCAL (local SSD) disks cannot be used."
+      )
+    }
+
+    "fail to validate too many cpus with the e2 machine family" in {
+      val runtimeAttributes = Map(
+        "docker" -> WomString("ubuntu:latest"),
+        "cpu" -> WomInteger(64),
+        "machineFamily" -> WomString("e2")
+      )
+      assertBatchRuntimeAttributesFailedCreation(
+        runtimeAttributes,
+        "The e2 machine family supports at most 32 cpus, but 64 were requested."
+      )
+    }
+
+    "ignore machineFamily constraints when predefinedMachineType is set" in {
+      val runtimeAttributes = Map(
+        "docker" -> WomString("ubuntu:latest"),
+        "cpu" -> WomInteger(64),
+        "machineFamily" -> WomString("e2"),
+        "predefinedMachineType" -> WomString("n2-standard-64")
+      )
+      val expectedRuntimeAttributes = expectedDefaults.copy(
+        cpu = refineMV(64),
+        machine = Option(MachineType("n2-standard-64")),
+        machineFamily = Option(E2CustomMachineType)
+      )
+      assertBatchRuntimeAttributesSuccessfulCreation(runtimeAttributes, expectedRuntimeAttributes)
+    }
+
     "require GPU provisioning when GPU is required" in {
       val runtimeAttributes = Map(
         "docker" -> WomString("ubuntu:latest"),

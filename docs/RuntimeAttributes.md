@@ -75,6 +75,7 @@ There are a number of additional runtime attributes that apply to the Google Clo
 - [zones](#zones)
 - [preemptible](#preemptible)
 - [predefinedMachineType](#predefinedmachinetype-alpha)
+- [machineFamily](#machinefamily)
 - [bootDiskSizeGb](#bootdisksizegb)
 - [noAddress](#noaddress)
 - [gpuCount and gpuType](#gpucount-and-gputype)
@@ -479,6 +480,58 @@ runtime {
 ```
 
 `nvidiaDriverVersion` is deprecated and ignored; GCP Batch selects the correct driver version automatically.
+
+### `machineFamily`
+
+*Default: none (custom machines are N1, or N2/N2D when implied by [`cpuPlatform`](#cpuplatform))*
+
+This option is specific to the Google Cloud Batch backend. It selects the machine family of the
+[custom machine type](https://cloud.google.com/compute/docs/instances/creating-instance-with-custom-machine-type)
+Cromwell builds from `cpu` and `memory`. Newer families are often cheaper and have better Spot availability than N1.
+
+Supported values (case-insensitive):
+
+| Family | vCPUs | Memory per vCPU |
+|--------|-------|-----------------|
+| `n1`   | 1, or a multiple of 2, up to 96 | 0.9 – 6.5 GB |
+| `n2`   | multiple of 2 up to 32, then multiple of 4 | 1 – 8 GB |
+| `n2d`  | 2, 4, 8, 16, then multiple of 16 up to 96 | 0.5 – 8 GB |
+| `n4`   | multiple of 2, 2 – 80 | 2 – 8 GB |
+| `n4d`  | 2, 4, 8, 16, then multiple of 16 up to 96 | 0.5 – 8 GB |
+| `e2`   | multiple of 2, 2 – 32 (max 128 GB memory) | 0.5 – 8 GB |
+
+As with the default behavior, `cpu` and `memory` are rounded up to the nearest valid shape of the family: memory below
+the family's minimum per vCPU is increased, and memory above the family's maximum per vCPU adds vCPUs.
+
+Rules and limitations:
+
+* [`predefinedMachineType`](#predefinedmachinetype-alpha) takes precedence over `machineFamily`, which takes precedence over the family implied by `cpuPlatform`. `cpuPlatform` is still passed to GCP as the minimum CPU platform; make sure it is valid for the selected family.
+* GPU accelerators (`gpuCount`/`gpuType`) can only be used with `n1`; any other family fails validation.
+* `n4` and `n4d` only support Hyperdisk. On these families the boot disk and all `SSD` and `HDD` disks are created as `hyperdisk-balanced`, and `LOCAL` disks fail validation.
+* `e2` requests above 32 vCPUs or 128 GB of memory fail validation.
+
+The easiest way to apply a family to all tasks of a workflow is through the `default_runtime_attributes` workflow option.
+A task's own `machineFamily` still overrides it:
+
+```json
+{
+  "default_runtime_attributes": {
+    "machineFamily": "n2d"
+  }
+}
+```
+
+Or per task:
+
+```
+runtime {
+  cpu: 4
+  memory: "16 GB"
+  machineFamily: "n4"
+}
+```
+
+A backend-wide default can be set in the backend's `default-runtime-attributes` configuration block.
 
 ### `cpuPlatform`
 

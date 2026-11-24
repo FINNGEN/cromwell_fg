@@ -88,7 +88,7 @@ class GcpBatchRequestFactoryImpl()(implicit gcsTransferConfiguration: GcsTransfe
                                    accelerators: Option[Accelerator.Builder],
                                    attachedDisks: List[AttachedDisk],
                                    machineType: String,
-                                   bootDiskType: Option[String]
+                                   bootDisk: Option[Disk]
   ): InstancePolicy.Builder = {
 
     // set GPU count to 0 if not included in workflow
@@ -111,7 +111,7 @@ class GcpBatchRequestFactoryImpl()(implicit gcsTransferConfiguration: GcsTransfe
     // Only the boot disk type is set; size is still derived by Batch from the image and `ComputeResource.bootDiskMib`.
     // If unset, Batch uses its default boot disk type.
     // https://cloud.google.com/batch/docs/reference/rest/v1/projects.locations.jobs#InstancePolicy.FIELDS.boot_disk
-    bootDiskType.foreach(t => instancePolicyBuilder.setBootDisk(Disk.newBuilder.setType(t).build))
+    bootDisk.foreach(disk => instancePolicyBuilder.setBootDisk(disk))
 
     val instancePolicy = instancePolicyBuilder.buildPartial()
 
@@ -232,7 +232,10 @@ class GcpBatchRequestFactoryImpl()(implicit gcsTransferConfiguration: GcsTransfe
 
     val networkInterface = createNetwork(data = data)
     val networkPolicy = createNetworkPolicy(networkInterface.build())
-    val allDisks = toDisks(allDisksToBeMounted)
+    // An explicit machine family only applies to custom machine types; a predefined machine type takes precedence
+    val machineFamily = if (runtimeAttributes.machine.isDefined) None else runtimeAttributes.machineFamily
+    val hyperdiskOnly = machineFamily.exists(_.requiresHyperdisk)
+    val allDisks = toDisks(allDisksToBeMounted, hyperdiskOnly)
     val allVolumes = toVolumes(allDisksToBeMounted) ::: createParameters.targetLogFile.map { targetLogFile =>
       Volume.newBuilder
         .setGcs(GCS.newBuilder().setRemotePath(targetLogFile.gcsBucket))
@@ -286,7 +289,8 @@ class GcpBatchRequestFactoryImpl()(implicit gcsTransferConfiguration: GcsTransfe
         GcpBatchMachineConstraints.machineType(runtimeAttributes.memory,
                                                runtimeAttributes.cpu,
                                                cpuPlatformOption = runtimeAttributes.cpuPlatform,
-                                               jobLogger = jobLogger
+                                               jobLogger = jobLogger,
+                                               machineFamilyOption = machineFamily
         )
     }
 
@@ -297,7 +301,10 @@ class GcpBatchRequestFactoryImpl()(implicit gcsTransferConfiguration: GcsTransfe
         accelerators,
         allDisks,
         machineType = machineType,
-        bootDiskType = data.gcpBatchParameters.batchAttributes.bootDiskType
+        // Hyperdisk-only machine families cannot use the configured (PD) boot disk type
+        bootDisk =
+          if (hyperdiskOnly) Option(hyperdiskBootDisk)
+          else data.gcpBatchParameters.batchAttributes.bootDiskType.map(t => Disk.newBuilder.setType(t).build)
       )
     val locationPolicy = LocationPolicy.newBuilder.addAllAllowedLocations(zones.asJava).build
     val allocationPolicy =

@@ -3,10 +3,15 @@ package cromwell.backend.google.batch.models
 import cats.implicits.{catsSyntaxValidatedId, toTraverseOps}
 import com.typesafe.config.Config
 import common.validation.ErrorOr.ErrorOr
-import cromwell.backend.google.batch.io.{GcpBatchAttachedDisk, GcpBatchWorkingDisk}
+import cromwell.backend.google.batch.io.{DiskType, GcpBatchAttachedDisk, GcpBatchWorkingDisk}
 import cromwell.backend.google.batch.models.GcpBatchRuntimeAttributes.BootDiskSizeKey
 import cromwell.backend.google.batch.models.GpuResource.GpuType
-import cromwell.backend.google.batch.util.{GpuTypeValidation, GpuValidation, MachineTypeValidation}
+import cromwell.backend.google.batch.util.{
+  GpuTypeValidation,
+  GpuValidation,
+  MachineFamilyValidation,
+  MachineTypeValidation
+}
 import cromwell.backend.standard.StandardValidatedRuntimeAttributesBuilder
 import cromwell.backend.validation._
 import eu.timepit.refined._
@@ -58,7 +63,8 @@ final case class GcpBatchRuntimeAttributes(cpu: Int Refined Positive,
                                            failOnStderr: Boolean,
                                            continueOnReturnCode: ContinueOnReturnCode,
                                            noAddress: Boolean,
-                                           checkpointFilename: Option[String]
+                                           checkpointFilename: Option[String],
+                                           machineFamily: Option[CustomMachineType] = None
 )
 
 object GcpBatchRuntimeAttributes {
@@ -90,6 +96,8 @@ object GcpBatchRuntimeAttributes {
 
   val MachineTypeKey = "predefinedMachineType"
 
+  val MachineFamilyKey = "machineFamily"
+
   val CheckpointFileKey = "checkpointFile"
   private val checkpointFileValidationInstance = new StringRuntimeAttributesValidation(CheckpointFileKey).optional
 
@@ -105,6 +113,10 @@ object GcpBatchRuntimeAttributes {
     cpuPlatformValidationInstance
   private def machineTypeValidation(runtimeConfig: Option[Config]): OptionalRuntimeAttributesValidation[MachineType] =
     MachineTypeValidation.optional
+  private def machineFamilyValidation(
+    runtimeConfig: Option[Config]
+  ): OptionalRuntimeAttributesValidation[CustomMachineType] =
+    MachineFamilyValidation.optionalWithConfigDefault(runtimeConfig)
   private def gpuTypeValidation(runtimeConfig: Option[Config]): OptionalRuntimeAttributesValidation[GpuType] =
     GpuTypeValidation.optional
 
@@ -169,6 +181,7 @@ object GcpBatchRuntimeAttributes {
         cpuValidation(runtimeConfig),
         cpuPlatformValidation(runtimeConfig),
         machineTypeValidation(runtimeConfig),
+        machineFamilyValidation(runtimeConfig),
         disksValidation(runtimeConfig),
         noAddressValidation(runtimeConfig),
         zonesValidation(runtimeConfig),
@@ -192,6 +205,10 @@ object GcpBatchRuntimeAttributes {
     )
     val machineType: Option[MachineType] = RuntimeAttributesValidation.extractOption(
       machineTypeValidation(runtimeAttrsConfig).key,
+      validatedRuntimeAttributes
+    )
+    val machineFamily: Option[CustomMachineType] = RuntimeAttributesValidation.extractOption(
+      machineFamilyValidation(runtimeAttrsConfig).key,
       validatedRuntimeAttributes
     )
     val checkpointFileName: Option[String] =
@@ -224,6 +241,17 @@ object GcpBatchRuntimeAttributes {
       )
     }
 
+    // Machine family is ignored when a predefined machine type is given, so only check it otherwise
+    val effectiveMachineFamily: Option[CustomMachineType] = if (machineType.isDefined) None else machineFamily
+
+    effectiveMachineFamily foreach { family =>
+      if (gpuResource.isDefined && family != N1CustomMachineType) {
+        throw new RuntimeException(
+          s"GPU accelerators ('gpuType'/'gpuCount') can only be attached to the n1 machine family, but '$MachineFamilyKey' is '${family.family}'."
+        )
+      }
+    }
+
     val docker: String = Containers.extractContainer(validatedRuntimeAttributes)
     val failOnStderr: Boolean =
       RuntimeAttributesValidation.extract(failOnStderrValidation(runtimeAttrsConfig), validatedRuntimeAttributes)
@@ -243,6 +271,22 @@ object GcpBatchRuntimeAttributes {
     val disks: Seq[GcpBatchAttachedDisk] =
       RuntimeAttributesValidation.extract(disksValidation(runtimeAttrsConfig), validatedRuntimeAttributes)
 
+    effectiveMachineFamily foreach {
+      case family if family.requiresHyperdisk && disks.exists(_.diskType == DiskType.LOCAL) =>
+        throw new RuntimeException(
+          s"The ${family.family} machine family only supports Hyperdisk storage, so LOCAL (local SSD) disks cannot be used. Use SSD or HDD disks instead."
+        )
+      case E2CustomMachineType if cpu.value > E2CustomMachineType.maxCpu =>
+        throw new RuntimeException(
+          s"The e2 machine family supports at most ${E2CustomMachineType.maxCpu} cpus, but $cpu were requested."
+        )
+      case E2CustomMachineType if memory.bytes > E2CustomMachineType.maxMemory.bytes =>
+        throw new RuntimeException(
+          s"The e2 machine family supports at most ${E2CustomMachineType.maxMemory} of memory, but $memory was requested."
+        )
+      case _ => ()
+    }
+
     new GcpBatchRuntimeAttributes(
       cpu = cpu,
       cpuPlatform = cpuPlatform,
@@ -257,7 +301,8 @@ object GcpBatchRuntimeAttributes {
       failOnStderr = failOnStderr,
       continueOnReturnCode = continueOnReturnCode,
       noAddress = noAddress,
-      checkpointFilename = checkpointFileName
+      checkpointFilename = checkpointFileName,
+      machineFamily = machineFamily
     )
   }
 

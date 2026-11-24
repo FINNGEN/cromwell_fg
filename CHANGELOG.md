@@ -2,7 +2,7 @@
 
 ## 93 Release Notes
 ### GCP Batch
-* Added the `machineFamily` runtime attribute, which selects the machine family (`n1`, `n2`, `n2d`, `n4`, `n4d` or `e2`) of the custom machine type built from `cpu` and `memory`. It can be set for a whole workflow via the `default_runtime_attributes` workflow option. When set, memory above the family's per-vCPU maximum is requested as extended memory instead of adding vCPUs. On `n4`/`n4d` the boot disk and `SSD`/`HDD` disks are created as `hyperdisk-balanced`. See [machineFamily](docs/RuntimeAttributes.md#machinefamily).
+* Added the `machineFamily` runtime attribute, which selects the machine family (`n1`, `n2`, `n2d`, `n4`, `n4d` or `e2`) of the custom machine type built from `cpu` and `memory`. It can be set for a whole workflow via the `default_runtime_attributes` workflow option. On `n4`/`n4d` the boot disk and `SSD`/`HDD` disks are created as `hyperdisk-balanced`. See [machineFamily](docs/RuntimeAttributes.md#machinefamily).
 
 ### AWS Batch
 * Added `tagAliases` backend config option, which duplicates engine-generated tags (e.g. `cromwell-workflow-id`) under alternative key names for external systems like cost-tracking tools. See the [Tag Aliases](supportedBackends/aws/src/main/scala/cromwell/backend/impl/aws/README.md#tag-aliases) section for configuration details.

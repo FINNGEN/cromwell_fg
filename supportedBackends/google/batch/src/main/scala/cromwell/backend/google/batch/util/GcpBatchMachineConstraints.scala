@@ -38,12 +38,5 @@ object GcpBatchMachineConstraints {
                   jobLogger: JobLogger,
                   machineFamilyOption: Option[CustomMachineType] = None
   ): String =
-    // When the user explicitly picks a machine family, honor the requested cpu count and satisfy high memory
-    // requests with extended memory (where the family supports it) instead of adding cpus.
-    customMachineType(cpuPlatformOption, machineFamilyOption).machineType(
-      memory,
-      cpu,
-      jobLogger,
-      useExtendedMemory = machineFamilyOption.isDefined
-    )
+    customMachineType(cpuPlatformOption, machineFamilyOption).machineType(memory, cpu, jobLogger)
 }

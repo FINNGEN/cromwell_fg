@@ -491,19 +491,17 @@ Cromwell builds from `cpu` and `memory`. Newer families are often cheaper and ha
 
 Supported values (case-insensitive):
 
-| Family | vCPUs | Memory per vCPU | Extended memory |
-|--------|-------|-----------------|-----------------|
-| `n1`   | 1, or a multiple of 2, up to 96 | 0.9 – 6.5 GB | yes |
-| `n2`   | multiple of 2 up to 32, then multiple of 4 | 1 – 8 GB | yes |
-| `n2d`  | 2, 4, 8, 16, then multiple of 16 up to 96 | 0.5 – 8 GB | yes |
-| `n4`   | multiple of 2, 2 – 80 | 2 – 8 GB | yes |
-| `n4d`  | 2, 4, 8, 16, then multiple of 16 up to 96 | 0.5 – 8 GB | yes |
-| `e2`   | multiple of 2, 2 – 32 (max 128 GB memory) | 0.5 – 8 GB | no |
+| Family | vCPUs | Memory per vCPU |
+|--------|-------|-----------------|
+| `n1`   | 1, or a multiple of 2, up to 96 | 0.9 – 6.5 GB |
+| `n2`   | multiple of 2 up to 32, then multiple of 4 | 1 – 8 GB |
+| `n2d`  | 2, 4, 8, 16, then multiple of 16 up to 96 | 0.5 – 8 GB |
+| `n4`   | multiple of 2, 2 – 80 | 2 – 8 GB |
+| `n4d`  | 2, 4, 8, 16, then multiple of 16 up to 96 | 0.5 – 8 GB |
+| `e2`   | multiple of 2, 2 – 32 (max 128 GB memory) | 0.5 – 8 GB |
 
-As with the default behavior, `cpu` and `memory` are rounded up to the nearest valid shape of the family. When
-`machineFamily` is set and the requested memory exceeds the family's maximum memory per vCPU, Cromwell keeps the
-requested `cpu` and requests [extended memory](https://cloud.google.com/compute/docs/instances/creating-instance-with-custom-machine-type#extended_memory)
-(e.g. `n2-custom-2-32768-ext`) instead of adding vCPUs. `e2` does not support extended memory, so vCPUs are added instead.
+As with the default behavior, `cpu` and `memory` are rounded up to the nearest valid shape of the family: memory below
+the family's minimum per vCPU is increased, and memory above the family's maximum per vCPU adds vCPUs.
 
 Rules and limitations:
 

@@ -107,7 +107,7 @@ class GcpBatchMachineConstraintsSpec extends AnyFlatSpec with CromwellTimeoutSpe
       // n4d: 2, 4, 8, 16, then multiples of 16 up to 96, 0.5-8 GB per cpu
       (MemorySize(4, MemoryUnit.GB), refineMV[Positive](3), None, N4DCustomMachineType, "n4d-custom-4-4096"),
       (MemorySize(2, MemoryUnit.GB), refineMV[Positive](33), None, N4DCustomMachineType, "n4d-custom-48-24576"),
-      // e2: even cpus between 2 and 32, 0.5-8 GB per cpu, no extended memory so cpus are added instead
+      // e2: even cpus between 2 and 32, 0.5-8 GB per cpu
       (MemorySize(1, MemoryUnit.GB), refineMV[Positive](1), None, E2CustomMachineType, "e2-custom-2-1024"),
       (MemorySize(32, MemoryUnit.GB), refineMV[Positive](2), None, E2CustomMachineType, "e2-custom-4-32768"),
       // n2d family wins over the cpu platform's implied n2
@@ -117,14 +117,15 @@ class GcpBatchMachineConstraintsSpec extends AnyFlatSpec with CromwellTimeoutSpe
        N2DCustomMachineType,
        "n2d-custom-2-1024"
       ),
-      // n1 family is the same as the default, except for extended memory
+      // n1 family is the same as the default
       (MemorySize(4, MemoryUnit.GB), refineMV[Positive](3), None, N1CustomMachineType, "custom-4-4096"),
-      // Memory above the max ratio uses extended memory instead of adding cpus
-      (MemorySize(13.65, MemoryUnit.GB), refineMV[Positive](1), None, N1CustomMachineType, "custom-1-14080-ext"),
-      (MemorySize(32, MemoryUnit.GB), refineMV[Positive](2), None, N2CustomMachineType, "n2-custom-2-32768-ext"),
-      (MemorySize(64, MemoryUnit.GB), refineMV[Positive](2), None, N2DCustomMachineType, "n2d-custom-2-65536-ext"),
-      (MemorySize(32, MemoryUnit.GB), refineMV[Positive](2), None, N4CustomMachineType, "n4-custom-2-32768-ext"),
-      (MemorySize(64, MemoryUnit.GB), refineMV[Positive](2), None, N4DCustomMachineType, "n4d-custom-2-65536-ext")
+      (MemorySize(13.65, MemoryUnit.GB), refineMV[Positive](1), None, N1CustomMachineType, "custom-4-14080"),
+      // Memory above 8 GB per cpu adds cpus
+      (MemorySize(32, MemoryUnit.GB), refineMV[Positive](2), None, N2CustomMachineType, "n2-custom-4-32768"),
+      (MemorySize(64, MemoryUnit.GB), refineMV[Positive](2), None, N2DCustomMachineType, "n2d-custom-8-65536"),
+      (MemorySize(32, MemoryUnit.GB), refineMV[Positive](2), None, N4CustomMachineType, "n4-custom-4-32768"),
+      (MemorySize(200, MemoryUnit.GB), refineMV[Positive](10), None, N4CustomMachineType, "n4-custom-26-204800"),
+      (MemorySize(64, MemoryUnit.GB), refineMV[Positive](2), None, N4DCustomMachineType, "n4d-custom-8-65536")
     )
 
     forAll(validTypes) { (memory, cpu, cpuPlatformOption, machineFamily, expected) =>
